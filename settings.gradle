@@ -1,0 +1,6 @@
+rootProject.name = 'mekanum'
+include 'shared'
+include 'server'
+include 'client'
+include 'robot'
+
