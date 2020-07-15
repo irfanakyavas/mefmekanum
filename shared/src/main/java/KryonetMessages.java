@@ -13,7 +13,10 @@ public class KryonetMessages
    public static void register(EndPoint endPoint)
    {
       Kryo kryo = endPoint.getKryo();
+
+      //Basic classes
       kryo.register(String[].class);
+      kryo.register(int[].class);
 
       //Server-Client Communication
       kryo.register(Message.ClientServerMessage.Join.class);
@@ -22,6 +25,7 @@ public class KryonetMessages
       kryo.register(Message.ClientServerMessage.TakeOwnershipRequest.class);
       kryo.register(Message.ClientServerMessage.TakeOwnershipResponse.class);
       kryo.register(Message.ClientServerMessage.ClientKickNotification.class);
+      kryo.register(Message.ClientServerMessage.AvailableRobotsNotification.class);
 
       //Server-Robot Communication
       kryo.register(Message.RobotServerMessage.Join.class);
@@ -129,6 +133,23 @@ public class KryonetMessages
             public JoinResponse(boolean success)
             {
                this.success = success;
+            }
+         }
+
+         public static class AvailableRobotsNotification extends ClientServerMessage
+         {
+            int[] availableRIDs;
+            String[] availableRNAMEs;
+
+            public AvailableRobotsNotification()
+            {
+
+            }
+
+            public AvailableRobotsNotification(int[] availableRIDs, String[] availableRNAMEs)
+            {
+               this.availableRIDs = availableRIDs;
+               this.availableRNAMEs = availableRNAMEs;
             }
          }
       }

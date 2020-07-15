@@ -3,23 +3,24 @@ import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
 
 import java.io.IOException;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MekanumRobot extends Thread
 {
-   private static final Client serverConnection = new Client();
-   public final int robotId = (int) ((Math.random() + 555) * 555);
-   public static String robotName;
+   public final int robotId = ThreadLocalRandom.current().nextInt(100000, 1000000);
+   private final Client serverConnection = new Client();
+   public String robotName;
    //These are read from by the com.mefhg.mekanumrobot.RobotSerialSendThread for sending to the robot over serial
-   public static AtomicInteger motor1Step = new AtomicInteger(0);
+   public AtomicInteger motor1Step = new AtomicInteger(0);
    //This value is written by the com.mefhg.mekanumrobot.RobotSerialReceiveThread for sending to the server over UDP
-   public static AtomicBoolean infrared = new AtomicBoolean(false);
-   public static AtomicInteger motor2Step = new AtomicInteger(0);
+   public AtomicBoolean infrared = new AtomicBoolean(false);
+   public AtomicInteger motor2Step = new AtomicInteger(0);
    public boolean isRegistered = false;
 
-   public static float joystickX = 0;
-   public static float joystickY = 0;
+   public float joystickX = 0;
+   public float joystickY = 0;
 
    //TODO: implement
    /*
@@ -58,10 +59,10 @@ public class MekanumRobot extends Thread
          //InetAddress gameServer = MekanumClient.serverConnection.discoverHost(5555,5555); //TODO: gameserver discovery
          //System.out.println("Server found at " + gameServer.toString());
          ServerListenerForRobot serverListenerForClient = new ServerListenerForRobot();
-         MekanumRobot.serverConnection.addListener(serverListenerForClient);
+         serverConnection.addListener(serverListenerForClient);
          new Thread(serverConnection).start();
-         MekanumRobot.serverConnection.connect(1500, "127.0.0.1", 5555, 5554); //TODO: gameserver discovery
-         MekanumRobot.serverConnection.sendTCP(new KryonetMessages.Message.RobotServerMessage.Join(robotName, robotId));
+         serverConnection.connect(5000, "127.0.0.1", 5555, 5554); //TODO: gameserver discovery
+         serverConnection.sendTCP(new KryonetMessages.Message.RobotServerMessage.Join(robotName, robotId));
 
       } catch (IOException ioException)
       {

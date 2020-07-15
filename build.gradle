@@ -11,4 +11,13 @@ repositories {
 
 dependencies {
     testCompile group: 'junit', name: 'junit', version: '4.12'
+    implementation project(":shared")
+    implementation project(":robot")
+    implementation project(":server")
+    implementation project(":client")
+    implementation fileTree(dir: 'lib', include: ['*.jar'])
+    testImplementation 'org.powermock:powermock-api-mockito:1.6.4'
+    testImplementation 'org.powermock:powermock-module-junit4-rule-agent:1.6.4'
+    testImplementation 'org.powermock:powermock-module-junit4-rule:1.6.4'
+    testImplementation 'org.powermock:powermock-module-junit4:1.6.4'
 }

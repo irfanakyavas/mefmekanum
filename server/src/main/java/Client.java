@@ -1,32 +1,25 @@
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
 
-import java.time.Instant;
-
 /**
  * Used only at server-side to store current clients and related objects
- * for the Class that defines client(connects to server) look at the mekanumclient.MekanumClient
  */
 public class Client
 {
-   private final ClientListener clientListener;
    private final Connection clientConnection;
    private Robot robot;
 
    public final int clientId;
    public final String clientName;
-   public Instant lastTimePingReceived;
 
    public Client(Connection clientConnection, int clientId, String clientName)
    {
       this.clientConnection = clientConnection;
       this.clientId = clientId;
       this.clientName = clientName;
-
       //Instantiate a clientListener that will listen to the messages sent by client after registration(joystickData etc.)
-      this.clientListener = new ClientListener(this);
+      ClientListener clientListener = new ClientListener(this);
       clientConnection.addListener(clientListener);
-      System.out.println("[SERVER] New client created, CID:" + clientId + " CNAME:" + clientName);
    }
 
    public Robot getRobot()
@@ -95,14 +88,12 @@ public class Client
          //Remove the client representations from HashMaps on disconnection so that they can connect and register properly again
          MekanumServer.userHandler.unMatchRobotWithClient(robot, c);
          MekanumServer.userHandler.unregisterClient(c);
-         System.out.println("[SERVER] com.mefhg.MekanumServer.src.MekanumServer.com.mefhg.MekanumServer.src.Client CID:" + clientId + " has been unregistered Reason: disconnected");
+         System.out.println("[SERVER] Client CID:" + clientId + " has been unregistered Reason: disconnected");
       }
 
       @Override
       public void received(Connection connection, Object o)
       {
-         lastTimePingReceived = Instant.now();
-
          //If the client(server-side) does not have a robot assigned and requests ownership of a robot try to match them
          if (o instanceof KryonetMessages.Message.ClientServerMessage.TakeOwnershipRequest && robot == null && ServerUserHandler.clientsWithoutRobots.containsKey(clientId))
          {
@@ -112,15 +103,19 @@ public class Client
          //If the client(server-side) is matched with a robot and receives a JoystickData message so we have to forward it to the robot of this client
          if (o instanceof KryonetMessages.Message.JoystickData && robot != null)
          {
-            System.out.println("[SERVER] com.mefhg.MekanumServer.src.MekanumServer.com.mefhg.MekanumServer.src.Client CID:" + c.clientId + "'s JoystickData has been received and client has a robot, server will try to will forward joystickdata to robot");
+            System.out.println("[SERVER] Client CID:" + c.clientId + "'s JoystickData has been received and client has a robot, server will try to will forward joystickdata to robot");
             KryonetMessages.Message.JoystickData joystickMessage = (KryonetMessages.Message.JoystickData) o;
             sendJoystickData(joystickMessage);
-            System.out.println("[SERVER] com.mefhg.MekanumServer.src.MekanumServer.com.mefhg.MekanumServer.src.Client CID:" + c.clientId + "'s JoystickData has been forwarded to the mekanumshared.com.mefhg.MekanumServer.src.MekanumServer.com.mefhg.MekanumServer.src.Robot RID:" + robot.robotId);
+            System.out.println("[SERVER] Client CID:" + c.clientId + "'s JoystickData has been forwarded to the Robot RID:" + robot.robotId);
          }
          if (o instanceof KryonetMessages.Message.ClientServerMessage.ChatMessage)
          {
             KryonetMessages.Message.ClientServerMessage.ChatMessage chatMessage = (KryonetMessages.Message.ClientServerMessage.ChatMessage) o;
-            System.out.println("[CHAT]" + chatMessage.sender + ":" + chatMessage.messageContent);
+            if (chatMessage.sender.contentEquals(c.clientName))
+            {
+               System.out.println("[CHAT]" + chatMessage.sender + ":" + chatMessage.messageContent);
+               MekanumServer.userHandler.broadcastUDPMessage(chatMessage, BroadcastTarget.EVERY_CLIENT);
+            }
          }
       }
    }

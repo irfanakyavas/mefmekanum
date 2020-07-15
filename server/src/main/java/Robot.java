@@ -9,10 +9,9 @@ import java.time.Instant;
 public class Robot
 {
    private final Connection robotConnection;
-   private final RobotListener robotListener;
    public KryonetMessages.Message.RobotServerMessage.InfraredData lastInfraredData;
 
-   public int robotId;
+   public final int robotId;
    public String robotName;
    public Instant lastTimePingReceived;
    private Client client;
@@ -33,7 +32,8 @@ public class Robot
       this.robotConnection = robotConnection;
       this.robotId = robotId;
       this.robotName = robotName;
-      this.robotListener = new RobotListener(this);
+      //Instantiate a robotListener that will listen to the messages sent by client after registration(joystickData etc.)
+      RobotListener robotListener = new RobotListener(this);
       robotConnection.addListener(robotListener);
    }
 
@@ -50,21 +50,6 @@ public class Robot
    public synchronized void sendUDP(KryonetMessages.Message.RobotServerMessage robotServerMessage)
    {
       robotConnection.sendUDP(robotServerMessage);
-   }
-
-   public void sendMessage(KryonetMessages.Message.RobotServerMessage robotMessage)
-   {
-      //TODO: tcp / udp inference
-   }
-
-   public void sendMessageTCP(KryonetMessages.Message.RobotServerMessage robotMessage)
-   {
-      robotConnection.sendTCP(robotMessage);
-   }
-
-   public void sendMessageUDP(KryonetMessages.Message.RobotServerMessage robotMessage)
-   {
-      robotConnection.sendUDP(robotMessage);
    }
 
    public class RobotListener extends Listener

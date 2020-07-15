@@ -2,6 +2,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ServerUserHandler extends Thread
 {
@@ -14,8 +15,10 @@ public class ServerUserHandler extends Thread
    public static final HashSet<String> robotNames = new HashSet<>();
    public static final HashSet<String> clientNames = new HashSet<>();
 
-   //Make sure there is only one (un-)registration process done at the same time
+   //Make sure there is only one (un-)/registration process done at the same time
    public static final Semaphore registrationSemaphore = new Semaphore(1);
+   //Make sure there is only one thread accessing to the unmatchedrobots list while broadcasting unmatched robots
+   public static final Semaphore unmatchedsSemaphore = new Semaphore(1);
 
    //Send list of robots without clients to the clients without robots every 3 seconds
    @Override
@@ -29,7 +32,7 @@ public class ServerUserHandler extends Thread
             Thread.sleep(3000);
          } catch (InterruptedException interruptedException)
          {
-            //TODO: exception handling
+
          }
       }
    }
@@ -39,58 +42,72 @@ public class ServerUserHandler extends Thread
     */
    private synchronized void broadcastUnmatchRobotsToRobotlessClients()
    {
-      if (robotsWithoutClients.size() == 0)
+      try
       {
-         clientsWithoutRobots.forEach((id, client)
-                 ->
+         unmatchedsSemaphore.acquire();
+         if (robotsWithoutClients.size() > 0)
          {
-            client.sendUDP(new KryonetMessages.Message.ClientServerMessage.ChatMessage("No robots available right now", "Server"));
-         });
-      } else
+            AtomicInteger i = new AtomicInteger(0);
+            String[] availableRNAMEs = new String[robotsWithoutClients.size()];
+            int[] availableRIDs = new int[robotsWithoutClients.size()];
+            robotsWithoutClients.values().forEach(robot ->
+            {
+               availableRIDs[i.get()] = robot.robotId;
+               availableRNAMEs[i.getAndIncrement()] = robot.robotName;
+            });
+            KryonetMessages.Message.ClientServerMessage.AvailableRobotsNotification announcement =
+                    new KryonetMessages.Message.ClientServerMessage.AvailableRobotsNotification(availableRIDs, availableRNAMEs);
+            clientsWithoutRobots.forEach((id, client) -> broadcastTCPMessage(announcement, BroadcastTarget.CLIENTS_WITHOUT_ROBOTS));
+         }
+         // System.out.println("[SERVER] Broadcasted available robots to robotless clients");
+      } catch (InterruptedException interruptedException)
       {
-         StringBuilder robotsWithoutClientsList = new StringBuilder("-----Robots available-----\n");
-         robotsWithoutClients.forEach((id, robot)
-                 ->
-         {
-            robotsWithoutClientsList.append("RID:" + id + " RNAME:" + robot.robotName + "\n");
-         });
-         clientsWithoutRobots.forEach((id, client)
-                 ->
-         {
-            KryonetMessages.Message.ClientServerMessage.ChatMessage announcement =
-                    new KryonetMessages.Message.ClientServerMessage.ChatMessage(robotsWithoutClientsList.toString(), "Server");
-            broadcastTCPMessageTo(announcement, BroadcastTarget.CLIENTS_WITHOUT_ROBOTS);
-         });
+         System.out.println("[SERVER] FAIL! could not broadcast available robots to robotless clients");
+         interruptedException.printStackTrace();
+      } finally
+      {
+         unmatchedsSemaphore.release();
       }
-      System.out.println("[SERVER] Broadcasted available robots to robotless clients");
    }
 
-   //TODO: message type checking
-   public synchronized void broadcastTCPMessageTo(KryonetMessages.Message message, BroadcastTarget target)
+   public synchronized void broadcastTCPMessage(KryonetMessages.Message message, BroadcastTarget target)
    {
-      if (target == BroadcastTarget.CLIENTS_WITHOUT_ROBOTS)
-         for (Client c : clientsWithoutRobots.values())
-            c.sendTCP((KryonetMessages.Message.ClientServerMessage) message);
-      if (target == BroadcastTarget.ROBOTS_WITHOUT_CLIENTS)
-         for (Client c : clientsWithoutRobots.values())
-            c.sendTCP((KryonetMessages.Message.ClientServerMessage) message);
-      if (target == BroadcastTarget.ROBOTS_WITH_CLIENTS)
-         for (Robot r : robotsWithClients.values())
-            r.sendTCP((KryonetMessages.Message.RobotServerMessage) message);
+      if (target == BroadcastTarget.CLIENTS_WITHOUT_ROBOTS && message instanceof KryonetMessages.Message.ClientServerMessage)
+         clientsWithoutRobots.values().forEach(c -> c.sendTCP((KryonetMessages.Message.ClientServerMessage) message));
+      else if (target == BroadcastTarget.ROBOTS_WITHOUT_CLIENTS && message instanceof KryonetMessages.Message.RobotServerMessage)
+         robotsWithoutClients.values().forEach(r -> r.sendTCP((KryonetMessages.Message.RobotServerMessage) message));
+      else if (target == BroadcastTarget.ROBOTS_WITH_CLIENTS && message instanceof KryonetMessages.Message.RobotServerMessage)
+         robotsWithClients.values().forEach(r -> r.sendTCP((KryonetMessages.Message.RobotServerMessage) message));
+      else if (target == BroadcastTarget.EVERY_CLIENT && message instanceof KryonetMessages.Message.ClientServerMessage)
+      {
+         clientsWithoutRobots.values().forEach(c -> c.sendTCP((KryonetMessages.Message.ClientServerMessage) message));
+         robotsWithClients.keySet().forEach(c -> c.sendTCP((KryonetMessages.Message.ClientServerMessage) message));
+      } else if (target == BroadcastTarget.EVERY_ROBOT && message instanceof KryonetMessages.Message.RobotServerMessage)
+      {
+         robotsWithoutClients.values().forEach(r -> r.sendTCP((KryonetMessages.Message.RobotServerMessage) message));
+         robotsWithClients.values().forEach(r -> r.sendTCP((KryonetMessages.Message.RobotServerMessage) message));
+      } else
+         System.out.println("[SERVER] broadcastUDPMessageTo was called with incompatible Message-BroadcastTarget pair");
    }
 
-   //TODO: message type checking
-   public synchronized void broadcastUDPMessageTo(KryonetMessages.Message message, BroadcastTarget target)
+   public synchronized void broadcastUDPMessage(KryonetMessages.Message message, BroadcastTarget target)
    {
-      if (target == BroadcastTarget.CLIENTS_WITHOUT_ROBOTS)
-         for (Client c : clientsWithoutRobots.values())
-            c.sendUDP((KryonetMessages.Message.ClientServerMessage) message);
-      if (target == BroadcastTarget.ROBOTS_WITHOUT_CLIENTS)
-         for (Client c : clientsWithoutRobots.values())
-            c.sendUDP((KryonetMessages.Message.ClientServerMessage) message);
-      if (target == BroadcastTarget.ROBOTS_WITH_CLIENTS)
-         for (Robot r : robotsWithClients.values())
-            r.sendUDP((KryonetMessages.Message.RobotServerMessage) message);
+      if (target == BroadcastTarget.CLIENTS_WITHOUT_ROBOTS && message instanceof KryonetMessages.Message.ClientServerMessage)
+         clientsWithoutRobots.values().forEach(c -> c.sendUDP((KryonetMessages.Message.ClientServerMessage) message));
+      else if (target == BroadcastTarget.ROBOTS_WITHOUT_CLIENTS && message instanceof KryonetMessages.Message.RobotServerMessage)
+         robotsWithoutClients.values().forEach(r -> r.sendUDP((KryonetMessages.Message.RobotServerMessage) message));
+      else if (target == BroadcastTarget.ROBOTS_WITH_CLIENTS && message instanceof KryonetMessages.Message.RobotServerMessage)
+         robotsWithClients.values().forEach(r -> r.sendUDP((KryonetMessages.Message.RobotServerMessage) message));
+      else if (target == BroadcastTarget.EVERY_CLIENT && message instanceof KryonetMessages.Message.ClientServerMessage)
+      {
+         clientsWithoutRobots.values().forEach(c -> c.sendUDP((KryonetMessages.Message.ClientServerMessage) message));
+         robotsWithClients.keySet().forEach(c -> c.sendUDP((KryonetMessages.Message.ClientServerMessage) message));
+      } else if (target == BroadcastTarget.EVERY_ROBOT && message instanceof KryonetMessages.Message.RobotServerMessage)
+      {
+         robotsWithoutClients.values().forEach(r -> r.sendUDP((KryonetMessages.Message.RobotServerMessage) message));
+         robotsWithClients.values().forEach(r -> r.sendUDP((KryonetMessages.Message.RobotServerMessage) message));
+      } else
+         System.out.println("[SERVER] broadcastUDPMessageTo was called with incompatible Message-BroadcastTarget pair");
    }
 
    /**
@@ -113,10 +130,13 @@ public class ServerUserHandler extends Thread
             c.sendTCP(new KryonetMessages.Message.ClientServerMessage.JoinResponse(false));
             System.out.println("[SERVER] FAIL! could not register client cname:" + c.clientName + " cid:" + c.clientId);
          }
-         registrationSemaphore.release();
       } catch (InterruptedException interruptedException)
       {
-         //TODO: error handling
+         System.out.println("[SERVER] FAIL! could not register client cname:" + c.clientName + " cid:" + c.clientId + " an exception was thrown");
+         interruptedException.printStackTrace();
+      } finally
+      {
+         registrationSemaphore.release();
       }
    }
 
@@ -136,12 +156,15 @@ public class ServerUserHandler extends Thread
             Robot r = robotsWithClients.get(c);
             robotsWithClients.remove(c);
             robotsWithoutClients.put(r.robotId, r);
-            System.out.println("[SERVER] Successfully registered client cname:" + c.clientName + " cid:" + c.clientId);
+            System.out.println("[SERVER] Successfully UNregistered client cname:" + c.clientName + " cid:" + c.clientId);
          }
-         registrationSemaphore.release();
       } catch (InterruptedException interruptedException)
       {
-         //TODO: error handling
+         System.out.println("[SERVER] FAIL! could not UNregister client cname:" + c.clientName + " cid:" + c.clientId);
+         interruptedException.printStackTrace();
+      } finally
+      {
+         registrationSemaphore.release();
       }
    }
 
@@ -165,10 +188,13 @@ public class ServerUserHandler extends Thread
             System.out.println("[SERVER] FAIL! could not register robot rname:" + r.robotName + " rid:" + r.robotId);
             r.sendTCP(new KryonetMessages.Message.RobotServerMessage.JoinResponse(false));
          }
-         registrationSemaphore.release();
       } catch (InterruptedException interruptedException)
       {
-         //TODO: error handling
+         System.out.println("[SERVER] FAIL! could not register robot rname:" + r.robotName + " rid:" + r.robotId);
+         interruptedException.printStackTrace();
+      } finally
+      {
+         registrationSemaphore.release();
       }
    }
 
@@ -189,18 +215,21 @@ public class ServerUserHandler extends Thread
             clientsWithoutRobots.put(r.getClient().clientId, r.getClient());
          }
          System.out.println("[SERVER] Successfully unregistered robot rname:" + r.robotName + " rid:" + r.robotId);
-         registrationSemaphore.release();
       } catch (InterruptedException interruptedException)
       {
-         //TODO: error handling
+         System.out.println("[SERVER] FAIL! could not unregister robot rname:" + r.robotName + " rid:" + r.robotId);
+         interruptedException.printStackTrace();
+      } finally
+      {
+         registrationSemaphore.release();
       }
    }
 
    /**
     * Reserves the robot and client for one other. If either one of the robot or client is disconnected they must be unmatched.
     *
-    * @param r mekanumshared.com.mefhg.MekanumServer.src.MekanumServer.com.mefhg.MekanumServer.src.Robot that will match with client
-    * @param c com.mefhg.MekanumServer.src.MekanumServer.com.mefhg.MekanumServer.src.Client that will match with robot
+    * @param r Robot that will match with client
+    * @param c Client that will match with robot
     */
    public synchronized void matchRobotWithClient(Robot r, Client c)
    {
@@ -223,7 +252,11 @@ public class ServerUserHandler extends Thread
          registrationSemaphore.release();
       } catch (InterruptedException interruptedException)
       {
-         //TODO: error handling
+         System.out.println("[SERVER] FAIL! could not match robot rname:" + r.robotName + " rid:" + r.robotId + " with client cname:" + c.clientName + " cid:" + c.clientId);
+         interruptedException.printStackTrace();
+      } finally
+      {
+         registrationSemaphore.release();
       }
    }
 
@@ -248,10 +281,13 @@ public class ServerUserHandler extends Thread
             robotsWithoutClients.put(r.robotId, r);
             System.out.println("[SERVER] Successfully UNmatched robot rname:" + r.robotName + " rid:" + r.robotId + " with client cname:" + c.clientName + " cid:" + c.clientId);
          }
-         registrationSemaphore.release();
       } catch (InterruptedException interruptedException)
       {
-         //TODO: error handling
+         System.out.println("[SERVER] FAIL! could not UNmatch robot rname:" + r.robotName + " rid:" + r.robotId + " with client cname:" + c.clientName + " cid:" + c.clientId);
+         interruptedException.printStackTrace();
+      } finally
+      {
+         registrationSemaphore.release();
       }
    }
 }
