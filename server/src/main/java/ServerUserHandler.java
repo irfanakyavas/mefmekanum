@@ -228,31 +228,32 @@ public class ServerUserHandler extends Thread
    /**
     * Reserves the robot and client for one other. If either one of the robot or client is disconnected they must be unmatched.
     *
-    * @param r Robot that will match with client
-    * @param c Client that will match with robot
+    * @param robotId id of the robot that will match with client
+    * @param c       Client that will match with robot
     */
-   public synchronized void matchRobotWithClient(Robot r, Client c)
+   public synchronized void matchRobotWithClient(int robotId, Client c)
    {
       try
       {
          registrationSemaphore.acquire();
-         if (!robotsWithClients.containsValue(r) && robotsWithoutClients.containsKey(r.robotId) && c.getRobot() == null)
+         Robot r = ServerUserHandler.robotsWithoutClients.get(robotId);
+         if (r != null && !robotsWithClients.containsValue(r) && robotsWithoutClients.containsKey(r.robotId) && c.getRobot() == null)
          {
             r.setClient(c);
             c.setRobot(r);
             robotsWithoutClients.remove(r.robotId);
             robotsWithClients.put(c, r);
             c.sendTCP(new KryonetMessages.Message.ClientServerMessage.TakeOwnershipResponse(r.robotId, c.clientId, true));
-            System.out.println("[SERVER] Successfully matched robot rname:" + r.robotName + " rid:" + r.robotId + " with client cname:" + c.clientName + " cid:" + c.clientId);
-         } else
-         {
-            c.sendTCP(new KryonetMessages.Message.ClientServerMessage.TakeOwnershipResponse(r.robotId, c.clientId, false));
-            System.out.println("[SERVER] FAIL! could not match robot rname:" + r.robotName + " rid:" + r.robotId + " with client cname:" + c.clientName + " cid:" + c.clientId);
+            System.out.println("[SERVER] Successfully matched robot rid:" + robotId + " with client cname:" + c.clientName + " cid:" + c.clientId);
          }
-         registrationSemaphore.release();
+         else
+         {
+            c.sendTCP(new KryonetMessages.Message.ClientServerMessage.TakeOwnershipResponse(robotId, c.clientId, false));
+            System.out.println("[SERVER] FAIL! could not match robot rid:" + robotId + " with client cname:" + c.clientName + " cid:" + c.clientId);
+         }
       } catch (InterruptedException interruptedException)
       {
-         System.out.println("[SERVER] FAIL! could not match robot rname:" + r.robotName + " rid:" + r.robotId + " with client cname:" + c.clientName + " cid:" + c.clientId);
+         System.out.println("[SERVER] FAIL! could not match robot rid:" + robotId + " with client cname:" + c.clientName + " cid:" + c.clientId);
          interruptedException.printStackTrace();
       } finally
       {

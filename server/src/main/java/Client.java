@@ -98,7 +98,7 @@ public class Client
          if (o instanceof KryonetMessages.Message.ClientServerMessage.TakeOwnershipRequest && robot == null && ServerUserHandler.clientsWithoutRobots.containsKey(clientId))
          {
             KryonetMessages.Message.ClientServerMessage.TakeOwnershipRequest takeOwnershipRequest = (KryonetMessages.Message.ClientServerMessage.TakeOwnershipRequest) o;
-            MekanumServer.userHandler.matchRobotWithClient(ServerUserHandler.robotsWithoutClients.get(takeOwnershipRequest.robotId), c);
+            MekanumServer.userHandler.matchRobotWithClient(takeOwnershipRequest.robotId, c);
          }
          //If the client(server-side) is matched with a robot and receives a JoystickData message so we have to forward it to the robot of this client
          if (o instanceof KryonetMessages.Message.JoystickData && robot != null)
