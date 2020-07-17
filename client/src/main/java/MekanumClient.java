@@ -17,10 +17,31 @@ public class MekanumClient extends Thread
    public String gameServerAddress = "127.0.0.1";
    public int tcpPort = 5555;
    public int udpPort = 5554;
+   public static MekanumClient mekanumClientInstance = new MekanumClient();
+   Thread serverConn;
 
-   public void configureConnectionSettings(String gameServerAddress, int tcpPort, int udpPort)
+   public MekanumClient()
    {
-      this.gameServerAddress = gameServerAddress;
+   }
+
+   public static MekanumClient getInstance()
+   {
+      if (mekanumClientInstance != null)
+         return mekanumClientInstance;
+      mekanumClientInstance = new MekanumClient();
+      return mekanumClientInstance;
+   }
+
+   public void disconnect()
+   {
+      serverConnection.stop();
+      MekanumClient.mekanumClientInstance = null;
+   }
+
+   public void configureNetworkSettings(String clientName, String ipAddress, int tcpPort, int udpPort)
+   {
+      this.clientName = clientName;
+      this.gameServerAddress = ipAddress;
       this.tcpPort = tcpPort;
       this.udpPort = udpPort;
    }
@@ -30,23 +51,28 @@ public class MekanumClient extends Thread
    {
       try
       {
+         MekanumClientStarter.onLogin();
          KryonetMessages.register(serverConnection.getEndPoint());
          ServerListenerForClient serverListenerForClient = new ServerListenerForClient();
          serverConnection.addListener(serverListenerForClient);
-         new Thread(serverConnection).start();
+         serverConn = new Thread(serverConnection);
+         serverConn.start();
          if (autoDiscoverGameServer)
          {
             InetAddress gameServer = serverConnection.discoverHost(tcpPort, udpPort);
             System.out.println("[CLIENT] Server found at " + gameServer.toString());
             serverConnection.connect(5000, gameServer.getHostAddress(), tcpPort, udpPort);
-         } else
+         }
+         else
          {
             serverConnection.connect(5000, gameServerAddress, tcpPort, udpPort);
          }
          serverConnection.sendTCP(new KryonetMessages.Message.ClientServerMessage.Join(clientName, clientId));
-      } catch (IOException ioException)
+      }
+      catch (IOException ioException)
       {
          System.out.println("[CLIENT] FAIL! An exception occured when Client tried to initialize networking");
+         MekanumClientStarter.onLogout();
          ioException.printStackTrace();
       }
    }
@@ -63,9 +89,12 @@ public class MekanumClient extends Thread
          serverConnection.sendUDP(joystickData);
    }
 
-   public void logOut()
+   private void logOut()
    {
       serverConnection.stop();
+      MekanumClientStarter.onLogout();
+      serverConn.interrupt();
+      this.interrupt();
    }
 
    public void tryToSelectRobot(int robotId)
@@ -80,12 +109,14 @@ public class MekanumClient extends Thread
       public void connected(Connection connection)
       {
          System.out.println("[CLIENT] Connected to gameserver");
+         MekanumClientStarter.onLogin();
       }
 
       @Override
       public void disconnected(Connection connection)
       {
          System.out.println("[CLIENT] Disconnected from gameserver");
+         //logOut();
       }
 
       @Override
@@ -117,6 +148,11 @@ public class MekanumClient extends Thread
             {
                System.out.println("[CLIENT] This client now owns the robot with RID:" + takeOwnershipResponse.robotId);
                hasRobot = true;
+            }
+            else
+            {
+               logOut();
+               MekanumClientStarter.onLogout();
             }
          }
          if (o instanceof KryonetMessages.Message.ClientServerMessage.JoinResponse)
